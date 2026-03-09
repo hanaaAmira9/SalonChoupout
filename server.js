@@ -10,7 +10,7 @@ const DB_PATH = process.env.DB_PATH || "./salon.db";
    ADMIN CONFIG
 ========================= */
 const ADMIN_PASSWORD = "admin1234";
-const ADMIN_TOKEN = "token-admin-coiffeur-2026";
+const ADMIN_TOKEN = "9f3c1e8a7b2d4f6e91c0a5b8d3e7f1a2";
 
 app.use(cors());
 app.use(express.json());
