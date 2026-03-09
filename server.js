@@ -6,6 +6,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_PATH = process.env.DB_PATH || "./salon.db";
 
+/* =========================
+   ADMIN CONFIG
+========================= */
+const ADMIN_PASSWORD = "admin1234";
+const ADMIN_TOKEN = "token-admin-coiffeur-2026";
+
 app.use(cors());
 app.use(express.json());
 
@@ -82,6 +88,41 @@ function todayDateString() {
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+/* =========================
+   AUTH ADMIN
+========================= */
+function requireAdmin(req, res, next) {
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : "";
+
+  if (token !== ADMIN_TOKEN) {
+    return res.status(401).json({
+      success: false,
+      message: "Accès admin refusé."
+    });
+  }
+
+  next();
+}
+
+app.post("/api/admin/login", (req, res) => {
+  const { password } = req.body || {};
+
+  if (String(password || "") !== ADMIN_PASSWORD) {
+    return res.status(401).json({
+      success: false,
+      message: "Mot de passe incorrect."
+    });
+  }
+
+  return res.json({
+    success: true,
+    token: ADMIN_TOKEN
+  });
+});
 
 /* =========================
    INIT DB
@@ -173,6 +214,12 @@ function broadcastEvent(type, payload) {
 }
 
 app.get("/api/notifications/stream", (req, res) => {
+  const token = req.query.token || "";
+
+  if (token !== ADMIN_TOKEN) {
+    return res.status(401).end();
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -198,7 +245,7 @@ app.get("/api/notifications/stream", (req, res) => {
 /* =========================
    APPOINTMENTS
 ========================= */
-app.get("/api/appointments", async (req, res) => {
+app.get("/api/appointments", requireAdmin, async (req, res) => {
   try {
     const rows = await allQuery(`
       SELECT *
@@ -317,7 +364,7 @@ app.post("/api/appointments", async (req, res) => {
   }
 });
 
-app.delete("/api/appointments/:id", async (req, res) => {
+app.delete("/api/appointments/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -350,7 +397,7 @@ app.delete("/api/appointments/:id", async (req, res) => {
   }
 });
 
-app.patch("/api/appointments/:id/done", async (req, res) => {
+app.patch("/api/appointments/:id/done", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -395,7 +442,7 @@ app.patch("/api/appointments/:id/done", async (req, res) => {
 /* =========================
    SERVICES
 ========================= */
-app.get("/api/services", async (req, res) => {
+app.get("/api/services", requireAdmin, async (req, res) => {
   try {
     const onlyActive = req.query.active === "1";
 
@@ -420,7 +467,7 @@ app.get("/api/services", async (req, res) => {
   }
 });
 
-app.post("/api/services", async (req, res) => {
+app.post("/api/services", requireAdmin, async (req, res) => {
   try {
     const data = req.body;
 
@@ -461,7 +508,7 @@ app.post("/api/services", async (req, res) => {
   }
 });
 
-app.put("/api/services/:id", async (req, res) => {
+app.put("/api/services/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;
@@ -504,7 +551,7 @@ app.put("/api/services/:id", async (req, res) => {
   }
 });
 
-app.delete("/api/services/:id", async (req, res) => {
+app.delete("/api/services/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -535,7 +582,7 @@ app.delete("/api/services/:id", async (req, res) => {
 /* =========================
    OFFERS / PACKS
 ========================= */
-app.get("/api/offers", async (req, res) => {
+app.get("/api/offers", requireAdmin, async (req, res) => {
   try {
     const onlyActive = req.query.active === "1";
 
@@ -566,7 +613,7 @@ app.get("/api/offers", async (req, res) => {
   }
 });
 
-app.post("/api/offers", async (req, res) => {
+app.post("/api/offers", requireAdmin, async (req, res) => {
   try {
     const data = req.body;
 
@@ -611,7 +658,7 @@ app.post("/api/offers", async (req, res) => {
   }
 });
 
-app.put("/api/offers/:id", async (req, res) => {
+app.put("/api/offers/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;
@@ -658,7 +705,7 @@ app.put("/api/offers/:id", async (req, res) => {
   }
 });
 
-app.delete("/api/offers/:id", async (req, res) => {
+app.delete("/api/offers/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -689,7 +736,7 @@ app.delete("/api/offers/:id", async (req, res) => {
 /* =========================
    SITE CONTENT
 ========================= */
-app.get("/api/site-content", async (req, res) => {
+app.get("/api/site-content", requireAdmin, async (req, res) => {
   try {
     const rows = await allQuery(`
       SELECT key, value
@@ -712,7 +759,7 @@ app.get("/api/site-content", async (req, res) => {
   }
 });
 
-app.put("/api/site-content", async (req, res) => {
+app.put("/api/site-content", requireAdmin, async (req, res) => {
   try {
     const data = req.body;
 
