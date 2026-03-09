@@ -796,6 +796,41 @@ app.put("/api/site-content", requireAdmin, async (req, res) => {
   }
 });
 
+app.get("/api/booked-slots", async (req, res) => {
+  try {
+    const date = String(req.query.date || "").trim();
+
+    if (!isValidDate(date)) {
+      return res.status(400).json({
+        success: false,
+        message: "Date invalide."
+      });
+    }
+
+    const rows = await allQuery(
+      `
+      SELECT time
+      FROM appointments
+      WHERE date = ?
+      ORDER BY time ASC
+      `,
+      [date]
+    );
+
+    res.json({
+      success: true,
+      date,
+      slots: rows.map((row) => row.time)
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Erreur chargement créneaux."
+    });
+  }
+});
+
 /* =========================
    SITE DATA PUBLIC
 ========================= */
@@ -854,6 +889,8 @@ app.get("/", (req, res) => {
     message: "API salon active"
   });
 });
+
+
 
 app.listen(PORT, () => {
   console.log(`Backend salon lancé sur http://localhost:${PORT}`);
