@@ -72,13 +72,8 @@ function isValidDate(dateStr) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(dateStr || ""));
 }
 
-function isValidSlot(time) {
-  const allowed = [];
-  for (let hour = 9; hour < 19; hour++) {
-    allowed.push(`${String(hour).padStart(2, "0")}:00`);
-    allowed.push(`${String(hour).padStart(2, "0")}:30`);
-  }
-  return allowed.includes(String(time));
+function isValidTimeFormat(time) {
+  return /^\d{2}:\d{2}$/.test(String(time || ""));
 }
 
 function todayDateString() {
@@ -87,6 +82,121 @@ function todayDateString() {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function timeStringToMinutes(timeStr) {
+  const [h, m] = String(timeStr || "00:00").split(":").map(Number);
+  return (h * 60) + m;
+}
+
+function minutesToTimeString(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function parseWorkingHours(value, fallback = "09:00 - 19:00") {
+  const raw = normalizeText(value || fallback);
+
+  if (!raw) {
+    return {
+      closed: false,
+      open: "09:00",
+      close: "19:00",
+      label: "09:00 - 19:00"
+    };
+  }
+
+  const lower = raw.toLowerCase();
+
+  if (
+    lower === "fermé" ||
+    lower === "ferme" ||
+    lower === "closed" ||
+    lower === "off"
+  ) {
+    return {
+      closed: true,
+      open: null,
+      close: null,
+      label: "Fermé"
+    };
+  }
+
+  const match = raw.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
+
+  if (!match) {
+    return {
+      closed: false,
+      open: "09:00",
+      close: "19:00",
+      label: fallback
+    };
+  }
+
+  const open = match[1].padStart(5, "0");
+  const close = match[2].padStart(5, "0");
+
+  return {
+    closed: false,
+    open,
+    close,
+    label: `${open} - ${close}`
+  };
+}
+
+function generateSlotsForSchedule(schedule) {
+  if (!schedule || schedule.closed || !schedule.open || !schedule.close) {
+    return [];
+  }
+
+  const start = timeStringToMinutes(schedule.open);
+  const end = timeStringToMinutes(schedule.close);
+
+  if (end <= start) return [];
+
+  const slots = [];
+  for (let minutes = start; minutes < end; minutes += 30) {
+    slots.push(minutesToTimeString(minutes));
+  }
+  return slots;
+}
+
+function getDayIndexFromDateString(dateString) {
+  const date = new Date(`${dateString}T12:00:00`);
+  return date.getDay();
+}
+
+async function getSiteContentObject() {
+  const rows = await allQuery(`
+    SELECT key, value
+    FROM site_content
+  `);
+
+  const content = {};
+  for (const row of rows) {
+    content[row.key] = row.value;
+  }
+  return content;
+}
+
+async function getScheduleForDate(dateString) {
+  const content = await getSiteContentObject();
+
+  const monSat = parseWorkingHours(content.hours_mon_sat, "09:00 - 19:00");
+  const sun = parseWorkingHours(content.hours_sun, "Fermé");
+
+  const day = getDayIndexFromDateString(dateString);
+  return day === 0 ? sun : monSat;
+}
+
+async function isValidSlotForDate(dateString, time) {
+  if (!isValidDate(dateString) || !isValidTimeFormat(time)) return false;
+
+  const schedule = await getScheduleForDate(dateString);
+  const allowedSlots = generateSlotsForSchedule(schedule);
+
+  return allowedSlots.includes(String(time));
 }
 
 /* =========================
@@ -192,7 +302,9 @@ db.serialize(() => {
     ('about_title', 'Notre expertise'),
     ('about_text', 'Des services professionnels pour votre style.'),
     ('offers_title', 'Nos packs et offres'),
-    ('services_title', 'Nos services')
+    ('services_title', 'Nos services'),
+    ('hours_mon_sat', '09:00 - 19:00'),
+    ('hours_sun', 'Fermé')
   `);
 });
 
@@ -293,10 +405,10 @@ app.post("/api/appointments", async (req, res) => {
       });
     }
 
-    if (!isValidSlot(data.time)) {
+    if (!isValidTimeFormat(data.time)) {
       return res.status(400).json({
         success: false,
-        message: "Créneau invalide."
+        message: "Heure invalide."
       });
     }
 
@@ -305,6 +417,14 @@ app.post("/api/appointments", async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Impossible de réserver dans le passé."
+      });
+    }
+
+    const slotAllowed = await isValidSlotForDate(data.date, data.time);
+    if (!slotAllowed) {
+      return res.status(400).json({
+        success: false,
+        message: "Créneau invalide pour cette date."
       });
     }
 
@@ -889,8 +1009,6 @@ app.get("/", (req, res) => {
     message: "API salon active"
   });
 });
-
-
 
 app.listen(PORT, () => {
   console.log(`Backend salon lancé sur http://localhost:${PORT}`);
